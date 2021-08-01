@@ -1,0 +1,549 @@
+(use "sibilisp/prelude"
+  maybe
+  io
+  show
+  fold-map
+  partition
+  memoize)
+
+
+
+;;; === MACROS ===
+(insert "./macros.sibilant")
+
+(macro is-in? (key obj)
+  (list "(" (transpile key) " in " (transpile obj) ")"))
+
+(macro dom-query-all (el ...selector-list)
+  (if (< (length selector-list 2))
+      `(as-list (.query-selector-all @el (+ ...@selector-list)))
+      `(as-list (.query-selector-all @el ...@selector-list))))
+
+
+;;; === CONSTANTS ===
+(defconstant *e-arg-1* " expects argument 1 to be a ")
+(defconstant *e-arg-2* " expects argument 2 to be a ")
+
+
+
+;;; === EVENT MAP ===
+(defconstant *event-map* (hash :animationend AnimationEvent
+                               :animationstart AnimationEvent
+                               :animationiteration AnimationEvent
+                               :transitionstart TransitionEvent
+                               :transitionend TransitionEvent
+                               :keydown KeyboardEvent
+                               :keypress KeyboardEvent
+                               :keyup KeyboardEvent
+                               :pointerover PointerEvent
+                               :pointerenter PointerEvent
+                               :pointerleave PointerEvent
+                               :pointerout PointerEvent
+                               :pointerdown PointerEvent
+                               :pointerup PointerEvent
+                               :pointermove PointerEvent
+                               :pointercancel PointerEvent
+                               :gotpointercapture PointerEvent
+                               :lostpointercapture PointerEvent
+                               :input InputEvent
+                               :click MouseEvent
+                               :dblclick MouseEvent
+                               :mousedown MouseEvent
+                               :mousemove MouseEvent
+                               :mouseup MouseEvent
+                               :mouseover MouseEvent
+                               :mouseout MouseEvent
+                               :mouseenter MouseEvent
+                               :mouseleave MouseEvent
+                               :touchstart TouchEvent
+                               :touchmove TouchEvent
+                               :touchend TouchEvent
+                               :touchcancel TouchEvent
+                               :focus FocusEvent
+                               :blur FocusEvent
+                               :change Event
+                               :scroll Event))
+                               
+
+
+
+;;; === DOM TYPE DEFINITION ===
+(provide
+  (deftype DOM (stack)))
+
+(setf DOM 'of (#(...els)
+                (DOM (io.of els))))
+
+(setf DOM 'lift (#(...els)
+                 (DOM 
+                  (io.of 
+                    (fold-map els 
+                              (#(el)
+                                (cond ((or (dom-is-node? el) (dom-is-elem? el))
+                                       (list el))
+                                      ((or (dom-is-elem-list? el)
+                                           (list? el))
+                                       el)
+                                      ((dom-is-convertable? el)
+                                       (as-list el))
+                                      :else (list))))))))
+
+(setf DOM 'empty (#()
+                  (DOM (io.of (list)))))
+
+(defmethod DOM run (...args)
+  (.run-io (getf this 'stack) ...args))
+
+(defmethod DOM to-io ()
+  (getf this 'stack))
+
+(defmethod DOM concat (t-dom)
+  (cond ((not (instance-of? t-dom DOM))
+         (error! "(DOM.concat)" *e-arg-1* "DOM, got " (show t-dom)))
+        :else (let ((s1 (getf this 'stack))
+                    (s2 (getf t-dom 'stack)))
+                (DOM 
+                  (.flat-map s2 (#(els1)
+                                  (.map s2 (#(els2)
+                                            (.concat els1 els2)))))))))
+
+(defmethod DOM map (fn)
+  (cond ((not (function? fn))
+         (error! "(DOM.map)" *e-arg-1* "function, got " (show fn)))
+        :else (DOM
+                (.flat-map (getf this 'stack)
+                           (#(els)
+                            (.map els fn)))))) 
+
+(defmethod DOM flat-map (fn)
+  (cond ((not (function? fn))
+         (error! "(DOM.flat-map/.chain)" *e-arg-1* "function, got " (show fn)))
+        :else (DOM 
+                (.map (getf this 'stack)
+                      (#(els)
+                        (.reduce els
+                                 (#(acc el)
+                                   (.concat acc (.run (fn el) el)))
+                                 (list)))))))
+                                         
+(setf DOM 'prototype 'chain (getf DOM 'prototype 'flat-map))
+
+(defmethod DOM filter (fn)
+  (cond ((not (function? fn))
+         (error! "(DOM.filter)" *e-arg-1* "function, got " (show fn)))
+        :else (DOM
+                (.map (getf this 'stack)
+                      (#(els)
+                        (.filter els fn))))))
+
+(defmethod DOM alt (t-dom)
+  (cond ((not (instance-of? t-dom DOM))
+         (error! "(DOM.alt)" *e-arg-1* "DOM, got " (show t-dom)))
+        :else (let ((s1 (getf this 'stack))
+                    (s2 (getf t-dom 'stack)))
+                (DOM 
+                  (.flat-map s1 (#(els1)
+                                  (if (> (length els1) 0)
+                                      (DOM.lift els1)
+                                      t-dom)))))))
+
+(defmethod DOM reduce (fn seed)
+  (cond ((not (function? fn))
+         (error! "(DOM.reduce)" *e-arg-1* "function, got " (show fn)))
+        :else (DOM
+                (.map (getf this 'stack)
+                      (#(els)
+                        (defvar r (.reduce els fn seed))
+                        (ternary (list? r) r (list r)))))))
+
+
+
+;;; === CONVENIENCE DOM CREATION ===
+(provide
+  (defun of (...els)
+    (DOM.of ...els)))
+
+(provide
+  (defun lift (...els)
+    (DOM.lift ...els)))
+
+(provide
+  (defun empty ()
+    (DOM.empty)))
+
+
+
+;;; === DOM BUILDING ===
+(provide
+  (defun create (tagname props ...children)
+    (let ((el (.create-element document tagname))
+          (ps (hash-entries props)))
+      (each ([key value]) ps
+        (if (eql? key 'class) 
+            (setf el 'className value)
+            (eql? key 'style) 
+            (each ([sprop sval]) (hash-entries value)
+              (setf el 'style sprop sval))
+            (eql? key 'for) 
+            (setf el 'html-for value)
+            (setf el key value)))
+      (each child children
+        (if (not (or (string? child) (dom-is-node? child)))
+            (return child)                                        ; just strings and html nodes
+            (string? child)
+            (.append-child el (.create-text-node document child))
+            (.append-child el child)))
+      el)))
+            
+      
+
+
+
+;;; === DOM ENTRIES ===
+(provide
+  (defun get-win ()
+    (DOM.of window)))
+
+(provide
+  (defun get-doc ()
+    (DOM.of document)))
+
+(provide
+  (defun get-doc-root ()
+    (.map (get-doc) (#-> (getf 'document-element)))))
+
+(provide
+  (defun get-doc-head ()
+    (.map (get-doc) (#-> (.query-selector "head")))))
+
+(provide
+  (defun get-doc-body ()
+    (.map (get-doc) (#-> (.query-selector "body")))))
+
+(provide
+  (defun get-doc-scroll-el ()
+    (.map (get-doc) (#(el) 
+                      (or (getf el 'scrolling-element) 
+                          (get-doc-root))))))
+
+
+;;; === BASIC PROPERTY MANIPULATION ===
+(provide
+  (defun set-prop! (prop value)
+    (when (not (string? prop))
+      (error! "(dom::set-prop)" *e-arg-1* "string, got " (show prop)))
+    (#(el)
+      (setf el prop (ternary (or (eql? false value)
+                                 (nil? value)
+                                 (void? value)
+                                 (nan? value))
+                             (nil)
+                             value))
+      el)))
+
+(provide
+  (defun get-prop (prop)
+    (#(el)
+      (getf el prop))))
+
+(provide
+  (defconstant set-text! (value)
+    (set-prop 'text-content (as-string value))))
+
+(provide
+  (defconstant get-text (el)
+    (call (get-prop 'text-content) el)))
+
+(provide
+  (defconstant set-html! (value)
+    (set-prop 'inner-h-t-m-l (as-string value))))
+
+(provide
+  (defconstant get-html (el)
+    (call (get-prop 'inner-h-t-m-l) el)))
+
+(provide
+  (defun set-value! (value)
+    (#(el)
+      (let ((tname (.to-lower-case (getf el 'node-name)))
+            (ttype (.to-lower-case (getf el 'type))))
+        (if (eql? tname 'textarea)
+            (do
+              (setf el 'text-content (as-string value))
+              el)
+            (eql? tname 'select)
+            (let ((opts (dom-query-all el "option"))
+                  (val (as-string value)))
+              (each opt opts
+                (setf opt 'selected (ternary (eql? val (getf opt 'value))
+                                             true
+                                             (nil))))
+              el)
+            (not (eql? tname 'input))
+            el
+            (eql? ttype 'radio)
+            (let* ((selct (getf el 'name))
+                   (radis (dom-query-all document "[name=\"" selct "\"]")))
+              (each rad radis
+                (setf rad 'checked (ternary (eql? value (getf rad 'value))
+                                            true
+                                            (nil))))
+              el)
+            (do
+              (setf el 'value value)
+              el))))))
+                  
+(provide
+  (defun get-value (el)
+    (getf el 'value)))
+
+
+;;; === CSS-CLASS MANIPULATIONS ===
+(provide
+  (defun has-class? (classn)
+    (#(el)
+      (.contains (getf el 'class-list) (as-string classn)))))
+
+(provide 
+  (defun add-class! (classn)
+    (#(el)
+      (.add (getf el 'class-list) (as-string classn))
+      el)))
+
+(provide 
+  (defun remove-class! (classn)
+    (#(el)
+      (.remove (getf el 'class-list) (as-string classn))
+      el)))
+
+(provide 
+  (defun toggle-class! (classn force)
+    (#(el)
+      (.toggle (getf el 'class-list) (as-string classn) force)
+      el)))
+
+ 
+;;; === DATA-ATTRIBUTE MANIPULATIONS ===
+(provide
+  (defun set-data! (...props-and-values)
+    (let ((pairs (partition props-and-values 2)))
+      (#(el)
+        (each ([prop value]) pairs
+          (setf (getf el 'dataset) prop (as-string value)))
+        el))))
+
+(provide
+  (defun get-data (...props)
+    (let ((acc (hash)))
+      (#(el)
+        (each prop props
+          (setf acc prop (getf el 'dataset prop)))
+        acc))))
+
+
+;;; === COMMON API'S ===
+(provide
+  (defun get-rect (...props)
+    (let ((ps (ternary (> (length props) 0) props (nil))))
+      (#(el)
+        (let ((rect (.get-bounding-client-rect el)))
+          (cond ((as-boolean ps)
+                 (.reduce ps
+                          (#(acc prop)
+                            (if (is-in? prop rect)
+                                (do (setf acc prop (getf rect prop))
+                                    acc)
+                                acc))
+                          (hash-create))) 
+                :else rect))))))
+
+(provide
+  (defun get-size (...props)
+    (let ((ps (ternary (> (length props) 0) 
+                       props 
+                       (getf get-size '**defaults**))))
+      (#(el)
+        (.reduce ps
+                 (#(acc prop)
+                  (if (is-in? prop el)
+                      (do (setf acc prop (getf el prop))
+                          acc)
+                      acc))
+                 (hash-create))))))
+      
+(defprop get-size 
+         '**defaults** 
+         (list 'offset-width
+               'offset-height))
+
+(provide
+  (defun get-outer-size (el)
+    (call (get-size 'offset-width 'offset-height) el)))
+
+(provide
+  (defun get-inner-size (el)
+    (call (get-size 'client-width 'client-height) el)))
+
+(provide
+  (defun get-scroll-size (el)
+    (call (get-size 'scroll-width 'scroll-height) el)))
+                                      
+
+
+;;; === TREE TRAVERSAL ===
+(provide
+  (defun get-child (selector)
+    (#(el)
+      (let ((child (.query-selector el selector)))
+        (DOM.lift child)))))
+
+(provide
+  (defun get-childs (selector)
+    (#(el)
+      (let ((childs (as-list (.query-selector-all el selector))))
+        (DOM.lift ...childs)))))
+
+(provide
+  (defun get-parent (selector)
+    (#(el)
+      (if (not (string? selector))
+          (let ((node (getf el 'parent-node)))
+            (cond ((exists? node)
+                   (DOM.lift node))
+                  :else (DOM.empty)))
+          (let ((node (getf el 'parent-node)))
+            (cond ((and (exists? node)
+                        (.matches node selector))
+                   (DOM.lift node))
+                  ((nothing? node)
+                   (DOM.empty))
+                  :else (loop ((n (getf node 'parent-node)))
+                          (cond ((nothing? n)
+                                 (DOM.empty))
+                                ((.matches n selector)
+                                 (DOM.lift n))
+                                :else (recur (getf n 'parent-node))))))))))
+
+(provide 
+  (defun get-previous (selector)
+    (#(el)
+      (if (not (string? selector))
+          (let ((node (getf el 'previous-element-sibling)))
+            (cond ((exists? node)
+                   (DOM.lift node)) 
+                  :else (DOM.empty)))
+          (let ((node (getf el 'previous-element-sibling)))
+            (cond ((and (exists? node)
+                        (.matches node selector))
+                   (DOM.lift node))
+                  ((nothing? node)
+                   (DOM.empty))
+                  :else (loop ((n (getf node 'previous-element-sibling)))
+                          (cond ((nothing? n)
+                                 (DOM.empty))
+                                ((.matches n selector)
+                                 (DOM.lift n))
+                                :else (recur (getf n 'previous-element-sibling))))))))))
+
+(provide 
+  (defun get-next (selector)
+    (#(el)
+      (if (not (string? selector))
+          (let ((node (getf el 'next-element-sibling)))
+            (cond ((exists? node)
+                   (DOM.lift node)) 
+                  :else (DOM.empty)))
+          (let ((node (getf el 'next-element-sibling)))
+            (cond ((and (exists? node)
+                        (.matches node selector))
+                   (DOM.lift node))
+                  ((nothing? node)
+                   (DOM.empty))
+                  :else (loop ((n (getf node 'next-element-sibling)))
+                          (cond ((nothing? n)
+                                 (DOM.empty))
+                                ((.matches n selector)
+                                 (DOM.lift n))
+                                :else (recur (getf n 'next-element-sibling))))))))))
+
+
+;;; === TREE MANIPULATION ===
+(provide
+  (defun insert-at! (index child)
+    (#(el)
+      (let ((childs (getf el 'children)))
+        (if (< index 1)
+            (el.insert-before child (getf el 'first-element-child))
+            (>= index (length childs))
+            (el.append-child child)
+            (let ((rchild (getf childs index)))
+              (el.insert-before child rchild)))
+        el))))
+
+(provide
+  (defun prepend! (child)
+    (insert-at! 0 child)))
+
+(provide
+  (defun append! (child)
+    (insert-at! Infinity child)))
+
+
+;;; === CSS MANIPULATION ===
+(provide
+  (defun get-css (props)
+    (#(el)
+      (let ((miss (list))
+            (pmap (hash-create)))
+        (each prop props
+          (let ((value (getf el 'style prop)))
+            (if (exists? value)
+                (do (setf pmap prop value)
+                    (incr-by matches 1))
+                (.push miss prop))))
+        (when (< 0 (length miss))
+          (let ((stylemap (get-computed-style el (nil))))
+            (each prop miss
+              (setf pmap prop (.get-property-value stylemap (as-stylemap-property prop))))))
+        pmap))))
+          
+(provide
+  (defun set-css! (prop-value-pairs)
+    (#(el)
+      (each ([prop value]) prop-value-pairs
+        (setf el 'style prop value))
+      el)))
+
+(defun as-stylemap-property (prop)
+  (.replace prop (regex "\\w\\W" 'g)
+                 (#(match)
+                  (+ (.char-at match 0)
+                     "-"
+                     (.char-at match 1)))))
+
+
+;;; === EVENTS ===
+(provide
+  (defun on-event (event handler bubbles)
+    (default bubbles false)
+    (#(el)
+      (.add-event-listener el event handler bubbles)
+      el)))
+
+(provide
+  (defun off-event (event handler bubbles)
+    (default bubbles false)
+    (#(el)
+      (.remove-event-listener el event handler bubbles)
+      el)))
+
+(provide
+  (defun fire-event (event config)
+    (#(el)
+      (.dispatch-event el (create-event event config))
+      el)))
+
+(defun create-event (etype config)
+  (let ((ctor (getf *event-map* etype)))
+    (cond ((function? ctor) (new ctor etype config))
+          :else (new CustomEvent etype config))))

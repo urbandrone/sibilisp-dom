@@ -1,0 +1,39 @@
+{
+  "name": "sibilisp-dom",
+  "version": "0.0.1",
+  "description": "A sibilisp based library for DOM operations",
+  "main": "lib/index.min.js",
+  "module": "lib/index.mjs",
+  "scripts": {
+    "transpile": "sibilisp -s src/ -d lib/ -f mjs",
+    "convert": "rollup -c config/rollup-config.js",
+    "build": "npm run transpile && npm run convert",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/urbandrone/sibilisp-dom.git"
+  },
+  "keywords": [
+    "sibilisp",
+    "sibilant",
+    "lisp",
+    "dom",
+    "javascript",
+    "functional"
+  ],
+  "author": "David Hofmann <the.urban.drone@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/urbandrone/sibilisp-dom/issues"
+  },
+  "homepage": "https://github.com/urbandrone/sibilisp-dom#readme",
+  "devDependencies": {
+    "@rollup/plugin-buble": "^0.21.3",
+    "@rollup/plugin-node-resolve": "^13.0.4",
+    "rollup": "^2.54.0",
+    "rollup-plugin-filesize": "^9.1.1",
+    "rollup-plugin-terser": "^7.0.2",
+    "sibilisp": "^0.6.3"
+  }
+}
