@@ -6,7 +6,7 @@
   "module": "lib/index.mjs",
   "scripts": {
     "transpile": "sibilisp -s src/ -d lib/ -f mjs",
-    "convert": "rollup -c config/rollup-config.js",
+    "convert": "rollup -c config/rollup.config.js",
     "build": "npm run transpile && npm run convert",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -34,6 +34,6 @@
     "rollup": "^2.54.0",
     "rollup-plugin-filesize": "^9.1.1",
     "rollup-plugin-terser": "^7.0.2",
-    "sibilisp": "^0.6.3"
+    "sibilisp": "^0.6.8"
   }
 }

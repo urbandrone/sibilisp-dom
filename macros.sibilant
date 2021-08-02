@@ -1,14 +1,14 @@
 (macro dom-is-elem? (a)
-  `(is-a @a HTMLElement))
+  `(and (exists? @a) (instance-of? @a HTMLElement)))
 
 (macro dom-is-node? (a)
-  `(is-a @a Node))
+  `(and (exists? @a) (instance-of? @a Node)))
 
 (macro dom-is-convertable? (a)
-  `(or (is-a @v NodeList)
-       (is-a @v HTMLCollection)))
+  `(or (is-a @a NodeList)
+       (is-a @a HTMLCollection)))
 
 (macro dom-is-elem-list? (as)
   (with-gensyms (el)
     `(and (list? @as)
-          (.every @as (#(@el) (or (is-node? @el) (is-elem? @el)))))))
+          (.every @as (#(@el) (or (dom-is-node? @el) (dom-is-elem? @el)))))))

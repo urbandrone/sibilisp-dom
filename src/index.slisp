@@ -9,13 +9,13 @@
 
 
 ;;; === MACROS ===
-(insert "./macros.sibilant")
+(include "./macros.sibilant")
 
 (macro is-in? (key obj)
   (list "(" (transpile key) " in " (transpile obj) ")"))
 
 (macro dom-query-all (el ...selector-list)
-  (if (< (length selector-list 2))
+  (if (< (length selector-list) 2)
       `(as-list (.query-selector-all @el (+ ...@selector-list)))
       `(as-list (.query-selector-all @el ...@selector-list))))
 
@@ -81,8 +81,7 @@
                               (#(el)
                                 (cond ((or (dom-is-node? el) (dom-is-elem? el))
                                        (list el))
-                                      ((or (dom-is-elem-list? el)
-                                           (list? el))
+                                      ((list? el)
                                        el)
                                       ((dom-is-convertable? el)
                                        (as-list el))
@@ -177,12 +176,12 @@
 (provide
   (defun create (tagname props ...children)
     (let ((el (.create-element document tagname))
-          (ps (hash-entries props)))
+          (ps (hash-pairs props)))
       (each ([key value]) ps
         (if (eql? key 'class) 
             (setf el 'className value)
             (eql? key 'style) 
-            (each ([sprop sval]) (hash-entries value)
+            (each ([sprop sval]) (hash-pairs value)
               (setf el 'style sprop sval))
             (eql? key 'for) 
             (setf el 'html-for value)
@@ -247,20 +246,20 @@
       (getf el prop))))
 
 (provide
-  (defconstant set-text! (value)
-    (set-prop 'text-content (as-string value))))
+  (defconstant set-text! (#(value)
+                          (set-prop 'text-content (as-string value)))))
 
 (provide
-  (defconstant get-text (el)
-    (call (get-prop 'text-content) el)))
+  (defconstant get-text (#(el)
+                          (call (get-prop 'text-content) el))))
 
 (provide
-  (defconstant set-html! (value)
-    (set-prop 'inner-h-t-m-l (as-string value))))
+  (defconstant set-html! (#(value)
+                          (set-prop 'inner-h-t-m-l (as-string value)))))
 
 (provide
-  (defconstant get-html (el)
-    (call (get-prop 'inner-h-t-m-l) el)))
+  (defconstant get-html (#(el)
+                          (call (get-prop 'inner-h-t-m-l) el))))
 
 (provide
   (defun set-value! (value)
@@ -519,7 +518,7 @@
                  (#(match)
                   (+ (.char-at match 0)
                      "-"
-                     (.char-at match 1)))))
+                     (.to-lower-case (.char-at match 1))))))
 
 
 ;;; === EVENTS ===
