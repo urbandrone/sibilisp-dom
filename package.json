@@ -6,6 +6,7 @@
   "module": "lib/index.mjs",
   "scripts": {
     "transpile": "sibilisp -s src/ -d lib/ -f mjs",
+    "transpile-lab": "sibilisp -s lab/formreader/src/ -d lab/formreader/out/",
     "convert": "rollup -c config/rollup.config.js",
     "build": "npm run transpile && npm run convert",
     "test": "echo \"Error: no test specified\" && exit 1"

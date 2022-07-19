@@ -14,10 +14,6 @@
 (macro is-in? (key obj)
   (list "(" (transpile key) " in " (transpile obj) ")"))
 
-(macro dom-query-all (el ...selector-list)
-  (if (< (length selector-list) 2)
-      `(as-list (.query-selector-all @el (+ ...@selector-list)))
-      `(as-list (.query-selector-all @el ...@selector-list))))
 
 
 ;;; === CONSTANTS ===
@@ -79,11 +75,11 @@
                   (io.of 
                     (fold-map els 
                               (#(el)
-                                (cond ((or (dom-is-node? el) (dom-is-elem? el))
+                                (cond ((or (dom/is-node? el) (dom/is-elem? el))
                                        (list el))
                                       ((list? el)
                                        el)
-                                      ((dom-is-convertable? el)
+                                      ((dom/is-convertable? el)
                                        (as-list el))
                                       :else (list))))))))
 
@@ -187,7 +183,7 @@
             (setf el 'html-for value)
             (setf el key value)))
       (each child children
-        (if (not (or (string? child) (dom-is-node? child)))
+        (if (not (or (string? child) (dom/is-node? child)))
             (return child)                                        ; just strings and html nodes
             (string? child)
             (.append-child el (.create-text-node document child))
@@ -271,7 +267,7 @@
               (setf el 'text-content (as-string value))
               el)
             (eql? tname 'select)
-            (let ((opts (dom-query-all el "option"))
+            (let ((opts (dom/query-all el "option"))
                   (val (as-string value)))
               (each opt opts
                 (setf opt 'selected (ternary (eql? val (getf opt 'value))
@@ -282,7 +278,7 @@
             el
             (eql? ttype 'radio)
             (let* ((selct (getf el 'name))
-                   (radis (dom-query-all document "[name=\"" selct "\"]")))
+                   (radis (dom/query-all document "[name=\"" selct "\"]")))
               (each rad radis
                 (setf rad 'checked (ternary (eql? value (getf rad 'value))
                                             true
@@ -294,7 +290,10 @@
                   
 (provide
   (defun get-value (el)
-    (getf el 'value)))
+    (let ((ttype (getf el 'type)))
+      (if (eql? ttype 'file)
+          (as-list (getf el 'files))
+          (getf el 'value)))))
 
 
 ;;; === CSS-CLASS MANIPULATIONS ===
@@ -401,6 +400,23 @@
     (#(el)
       (let ((childs (as-list (.query-selector-all el selector))))
         (DOM.lift ...childs)))))
+
+(provide
+  (defun get-by-name (name)
+    (#(el)
+      (call (get-childs (+ "[name=" name "]")) el))))
+
+(provide
+  (defun get-by-class (cls)
+    (#(el)
+      (call (get-childs (+ "." cls)) el))))
+
+(provide
+  (defun get-by-data (prop (value (nil)))
+    (#(el)
+      (if (exists? value)
+          (call (get-childs (+ "[data-" prop "=" value "]")) el)
+          (call (get-childs (+ "[data-" prop "]")) el)))))
 
 (provide
   (defun get-parent (selector)
